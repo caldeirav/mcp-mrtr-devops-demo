@@ -22,13 +22,19 @@ cp .env.example .env
 ## Install deps
 
 ```bash
-uv sync
+uv sync --group dev
 ```
 
 ## Run the demo (one command)
 
 ```bash
 uv run python main.py
+```
+
+Unit/contract tests (no gateway required):
+
+```bash
+uv run pytest
 ```
 
 Harness responsibilities:

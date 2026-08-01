@@ -80,6 +80,18 @@ MCP server :8000  ──►  HMAC requestState  ◄──  operator HITL
 LM Studio :1234  (qwen/qwen3.6-35b-a3b)
 ```
 
+## Quick start
+
+See [specs/001-mrtr-db-migration/quickstart.md](specs/001-mrtr-db-migration/quickstart.md).
+
+```bash
+cp .env.example .env   # set MCP_HMAC_SECRET; keep LM Studio defaults
+uv sync
+uv run python main.py  # validates LLM, starts MCP + agentgateway, runs HITL demo
+```
+
+Requires: Python 3.11+, `uv`, LM Studio with `qwen/qwen3.6-35b-a3b`, and `agentgateway` on `PATH`.
+
 ## License
 
 See [LICENSE](LICENSE).

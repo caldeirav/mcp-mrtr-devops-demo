@@ -28,10 +28,10 @@ description: "Task list for MRTR database migration HITL demo"
 
 **Purpose**: uv project, package layout, env templates, gateway config stub
 
-- [ ] T001 Create package directories and `__init__.py` files for `mcp_server/` and `agent/` plus `tests/unit/`, `tests/contract/`, `tests/integration/` per plan.md
-- [ ] T002 Initialize uv Python 3.11+ project in `pyproject.toml` with dependencies `langgraph`, `langchain-openai`, `httpx`, `fastapi`, `uvicorn`, `pydantic`, `python-dotenv`, and dev dep `pytest`
-- [ ] T003 [P] Add committed `.env.example` (no secrets) documenting `OPENAI_API_BASE`, `OPENAI_API_KEY`, `MODEL_NAME`, `AGENTGATEWAY_PORT`, `MCP_SERVER_PORT`, `MCP_HMAC_SECRET`
-- [ ] T004 [P] Copy `specs/001-mrtr-db-migration/contracts/agentgateway.yaml` to repo-root `agentgateway.yaml` (`statefulMode: stateless`, port 8080 → `http://127.0.0.1:8000/mcp`)
+- [x] T001 Create package directories and `__init__.py` files for `mcp_server/` and `agent/` plus `tests/unit/`, `tests/contract/`, `tests/integration/` per plan.md
+- [x] T002 Initialize uv Python 3.11+ project in `pyproject.toml` with dependencies `langgraph`, `langchain-openai`, `httpx`, `fastapi`, `uvicorn`, `pydantic`, `python-dotenv`, and dev dep `pytest`
+- [x] T003 [P] Add committed `.env.example` (no secrets) documenting `OPENAI_API_BASE`, `OPENAI_API_KEY`, `MODEL_NAME`, `AGENTGATEWAY_PORT`, `MCP_SERVER_PORT`, `MCP_HMAC_SECRET`
+- [x] T004 [P] Copy `specs/001-mrtr-db-migration/contracts/agentgateway.yaml` to repo-root `agentgateway.yaml` (`statefulMode: stateless`, port 8080 → `http://127.0.0.1:8000/mcp`)
 
 ---
 
@@ -41,12 +41,12 @@ description: "Task list for MRTR database migration HITL demo"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 Implement canonical constants (`ENVIRONMENT_TAGS`, TTL 300s, destructive keywords, defaults, protocol/tool names) in `mcp_server/mrtr_types.py`
-- [ ] T006 [P] Implement SEP-2322 Pydantic models (`InputRequiredResult`, `InputRequests`/`ElicitRequest`, `InputResponses`/`ElicitResult`, `CompleteResult`, `ApplyDbMigrationArgs`, `RequestStatePayload`) in `mcp_server/mrtr_types.py` per data-model.md
-- [ ] T007 [P] Implement HMAC-SHA256 mint/verify for `requestState` (`base64url(payload).hmac_hex`, TTL + bind checks) in `mcp_server/crypto.py`
-- [ ] T008 Create FastAPI app skeleton with `POST /mcp` JSON-RPC router stub (header checks for `Mcp-Protocol-Version: 2026-07-28`; reject/ignore `Mcp-Session-Id`) in `mcp_server/server.py`
-- [ ] T009 [P] Add unit tests for crypto mint/verify/tamper/expiry in `tests/unit/test_crypto.py`
-- [ ] T010 [P] Add unit tests for allow-list constant and destructive keyword helper in `tests/unit/test_constants.py`
+- [x] T005 Implement canonical constants (`ENVIRONMENT_TAGS`, TTL 300s, destructive keywords, defaults, protocol/tool names) in `mcp_server/mrtr_types.py`
+- [x] T006 [P] Implement SEP-2322 Pydantic models (`InputRequiredResult`, `InputRequests`/`ElicitRequest`, `InputResponses`/`ElicitResult`, `CompleteResult`, `ApplyDbMigrationArgs`, `RequestStatePayload`) in `mcp_server/mrtr_types.py` per data-model.md
+- [x] T007 [P] Implement HMAC-SHA256 mint/verify for `requestState` (`base64url(payload).hmac_hex`, TTL + bind checks) in `mcp_server/crypto.py`
+- [x] T008 Create FastAPI app skeleton with `POST /mcp` JSON-RPC router stub (header checks for `Mcp-Protocol-Version: 2026-07-28`; reject/ignore `Mcp-Session-Id`) in `mcp_server/server.py`
+- [x] T009 [P] Add unit tests for crypto mint/verify/tamper/expiry in `tests/unit/test_crypto.py`
+- [x] T010 [P] Add unit tests for allow-list constant and destructive keyword helper in `tests/unit/test_constants.py`
 
 **Checkpoint**: Foundation ready — user story implementation can begin
 
@@ -60,12 +60,12 @@ description: "Task list for MRTR database migration HITL demo"
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Implement destructive detection + `InputRequiredResult` response (elicitation key `confirm_drop_form`, schema for `confirm_drop` + `environment_tag` enum) in `mcp_server/server.py`
-- [ ] T012 [US1] Implement resume path: verify `requestState`, accept valid `inputResponses`, return `resultType: complete` applied summary (simulated) in `mcp_server/server.py`
-- [ ] T013 [P] [US1] Implement httpx MCP client (protocol headers, JSON-RPC ids, parse `resultType`, echo `requestState`, build `inputResponses`) targeting gateway base URL in `agent/mcp_client.py`
-- [ ] T014 [US1] Implement LangGraph state graph (`call_tool` → `human_input` with `interrupt()` → `retry_tool`) and `MemorySaver` thread config in `agent/graph.py`
-- [ ] T015 [US1] Wire terminal prompts for `confirm_drop` and `environment_tag` and resume via `Command(resume=...)` in `agent/graph.py` (or small helper colocated there)
-- [ ] T016 [P] [US1] Add contract fixture/assertions for initial `input_required` shape from `contracts/mrtr-tools-call.md` in `tests/contract/test_mrtr_input_required.py`
+- [x] T011 [US1] Implement destructive detection + `InputRequiredResult` response (elicitation key `confirm_drop_form`, schema for `confirm_drop` + `environment_tag` enum) in `mcp_server/server.py`
+- [x] T012 [US1] Implement resume path: verify `requestState`, accept valid `inputResponses`, return `resultType: complete` applied summary (simulated) in `mcp_server/server.py`
+- [x] T013 [P] [US1] Implement httpx MCP client (protocol headers, JSON-RPC ids, parse `resultType`, echo `requestState`, build `inputResponses`) targeting gateway base URL in `agent/mcp_client.py`
+- [x] T014 [US1] Implement LangGraph state graph (`call_tool` → `human_input` with `interrupt()` → `retry_tool`) and `MemorySaver` thread config in `agent/graph.py`
+- [x] T015 [US1] Wire terminal prompts for `confirm_drop` and `environment_tag` and resume via `Command(resume=...)` in `agent/graph.py` (or small helper colocated there)
+- [x] T016 [P] [US1] Add contract fixture/assertions for initial `input_required` shape from `contracts/mrtr-tools-call.md` in `tests/contract/test_mrtr_input_required.py`
 
 **Checkpoint**: US1 happy-path MRTR authorization works (MCP + agent; harness may still be manual process start)
 
@@ -79,10 +79,10 @@ description: "Task list for MRTR database migration HITL demo"
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] Implement fail-closed JSON-RPC errors for invalid/expired/tampered/bind-mismatched `requestState` in `mcp_server/server.py` and `mcp_server/crypto.py` as needed
-- [ ] T018 [US2] Implement denied/cancelled `CompleteResult` when `confirm_drop` is false, answers missing, or `environment_tag` ∉ `{dev, staging, prod}` in `mcp_server/server.py`
-- [ ] T019 [P] [US2] Add unit/contract tests for tamper, expiry, and deny paths in `tests/unit/test_resume_reject.py` and/or `tests/contract/test_mrtr_deny.py`
-- [ ] T020 [US2] Ensure agent surfaces denial/error messages clearly in terminal after retry in `agent/graph.py`
+- [x] T017 [US2] Implement fail-closed JSON-RPC errors for invalid/expired/tampered/bind-mismatched `requestState` in `mcp_server/server.py` and `mcp_server/crypto.py` as needed
+- [x] T018 [US2] Implement denied/cancelled `CompleteResult` when `confirm_drop` is false, answers missing, or `environment_tag` ∉ `{dev, staging, prod}` in `mcp_server/server.py`
+- [x] T019 [P] [US2] Add unit/contract tests for tamper, expiry, and deny paths in `tests/unit/test_resume_reject.py` and/or `tests/contract/test_mrtr_deny.py`
+- [x] T020 [US2] Ensure agent surfaces denial/error messages clearly in terminal after retry in `agent/graph.py`
 
 **Checkpoint**: US1 + US2 integrity and soft-deny behaviors are verifiable without the full harness
 
@@ -96,9 +96,9 @@ description: "Task list for MRTR database migration HITL demo"
 
 ### Implementation for User Story 3
 
-- [ ] T021 [US3] Implement non-destructive immediate `CompleteResult` path (no `inputRequests`) in `mcp_server/server.py`
-- [ ] T022 [P] [US3] Add contract/unit coverage for non-destructive completion in `tests/contract/test_mrtr_non_destructive.py`
-- [ ] T023 [US3] Ensure agent graph skips `human_input` when initial tool result is `complete` in `agent/graph.py`
+- [x] T021 [US3] Implement non-destructive immediate `CompleteResult` path (no `inputRequests`) in `mcp_server/server.py`
+- [x] T022 [P] [US3] Add contract/unit coverage for non-destructive completion in `tests/contract/test_mrtr_non_destructive.py`
+- [x] T023 [US3] Ensure agent graph skips `human_input` when initial tool result is `complete` in `agent/graph.py`
 
 **Checkpoint**: Conditional HITL is demonstrated (pause only when destructive)
 
@@ -112,11 +112,11 @@ description: "Task list for MRTR database migration HITL demo"
 
 ### Implementation for User Story 4
 
-- [ ] T024 [US4] Implement LM Studio reachability probe (fail-fast clear terminal error) before HITL story in `main.py`
-- [ ] T025 [US4] Implement subprocess lifecycle: ensure `agentgateway.yaml`, start uvicorn `mcp_server.server:app` on `MCP_SERVER_PORT`, start `agentgateway -f agentgateway.yaml`, wait for ports, cleanup on exit in `main.py`
-- [ ] T026 [US4] Trigger LangGraph run with defaults `prod-db-01` / `V004__drop_legacy_users.sql` via gateway URL from env in `main.py`
-- [ ] T027 [US4] Load dotenv / env validation (required secrets and ports) in `main.py`
-- [ ] T028 [P] [US4] Document run steps aligning with implementation in `specs/001-mrtr-db-migration/quickstart.md` and briefly link from `README.md`
+- [x] T024 [US4] Implement LM Studio reachability probe (fail-fast clear terminal error) before HITL story in `main.py`
+- [x] T025 [US4] Implement subprocess lifecycle: ensure `agentgateway.yaml`, start uvicorn `mcp_server.server:app` on `MCP_SERVER_PORT`, start `agentgateway -f agentgateway.yaml`, wait for ports, cleanup on exit in `main.py`
+- [x] T026 [US4] Trigger LangGraph run with defaults `prod-db-01` / `V004__drop_legacy_users.sql` via gateway URL from env in `main.py`
+- [x] T027 [US4] Load dotenv / env validation (required secrets and ports) in `main.py`
+- [x] T028 [P] [US4] Document run steps aligning with implementation in `specs/001-mrtr-db-migration/quickstart.md` and briefly link from `README.md`
 
 **Checkpoint**: Presenter one-command demo path is complete
 
@@ -126,10 +126,10 @@ description: "Task list for MRTR database migration HITL demo"
 
 **Purpose**: Hardening, docs consistency, modular verification
 
-- [ ] T029 [P] Add integration smoke test (skip if gateway/LLM unavailable) calling through `http://127.0.0.1:8080` in `tests/integration/test_gateway_mrtr.py`
-- [ ] T030 [P] Verify no code path sets or requires `Mcp-Session-Id`; grep/guard in `mcp_server/server.py` and `agent/mcp_client.py`
-- [ ] T031 Confirm `ENVIRONMENT_TAGS` is the single allow-list source used by server validation and elicitation schema in `mcp_server/mrtr_types.py` / `mcp_server/server.py`
-- [ ] T032 Run `uv run pytest` and fix failures; validate quickstart commands manually against SC-001–SC-009 where environment allows
+- [x] T029 [P] Add integration smoke test (skip if gateway/LLM unavailable) calling through `http://127.0.0.1:8080` in `tests/integration/test_gateway_mrtr.py`
+- [x] T030 [P] Verify no code path sets or requires `Mcp-Session-Id`; grep/guard in `mcp_server/server.py` and `agent/mcp_client.py`
+- [x] T031 Confirm `ENVIRONMENT_TAGS` is the single allow-list source used by server validation and elicitation schema in `mcp_server/mrtr_types.py` / `mcp_server/server.py`
+- [x] T032 Run `uv run pytest` and fix failures; validate quickstart commands manually against SC-001–SC-009 where environment allows
 
 ---
 

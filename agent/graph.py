@@ -10,6 +10,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
+from agent import console
 from agent.mcp_client import McpClient, McpClientError
 from mcp_server.mrtr_types import (
     DEFAULT_CLUSTER_ID,
@@ -30,6 +31,7 @@ class AgentState(TypedDict, total=False):
     error: str | None
     confirm_drop: bool
     environment_tag: str
+    had_hitl: bool
 
 
 def _gateway_base_url() -> str:
@@ -60,6 +62,11 @@ def call_model(state: AgentState) -> dict[str, Any]:
     prompt = state.get("user_prompt") or (
         f"Apply emergency migration {script_name} on cluster {cluster_id}."
     )
+    console.agent(
+        "LLM acknowledging operator intent",
+        f"model={os.getenv('MODEL_NAME', 'qwen/qwen3.6-35b-a3b')}",
+        f"prompt: {prompt}",
+    )
     llm = _build_llm()
     message = llm.invoke(
         [
@@ -72,15 +79,21 @@ def call_model(state: AgentState) -> dict[str, Any]:
         ]
     )
     note = getattr(message, "content", str(message))
+    note_str = note if isinstance(note, str) else str(note)
+    console.agent("LLM response", note_str)
     return {
         "cluster_id": cluster_id,
         "script_name": script_name,
-        "llm_note": note if isinstance(note, str) else str(note),
+        "llm_note": note_str,
     }
 
 
 def call_tool(state: AgentState) -> dict[str, Any]:
-    client = McpClient(_gateway_base_url())
+    console.trace(
+        "LangGraph node: call_tool",
+        "Invoking apply_db_migration through agentgateway (not direct to MCP).",
+    )
+    client = McpClient(_gateway_base_url(), verbose=True)
     try:
         result = client.call_apply_db_migration(
             cluster_id=state["cluster_id"],
@@ -88,11 +101,11 @@ def call_tool(state: AgentState) -> dict[str, Any]:
         )
     except McpClientError as exc:
         msg = f"Tool call failed: {exc}"
-        print(msg)
+        console.err("tools/call failed", msg)
         return {"error": str(exc), "final_text": msg}
     except Exception as exc:  # noqa: BLE001
         msg = f"Tool call failed: {exc}"
-        print(msg)
+        console.err("tools/call failed", msg)
         return {"error": str(exc), "final_text": msg}
 
     if result.get("resultType") == "input_required":
@@ -101,16 +114,18 @@ def call_tool(state: AgentState) -> dict[str, Any]:
             "request_state": result.get("requestState"),
             "input_requests": result.get("inputRequests"),
             "error": None,
+            "had_hitl": True,
         }
 
     text = McpClient.result_text(result)
-    print(f"Migration outcome: {text}")
+    console.ok("Non-destructive path completed without HITL", text)
     return {
         "last_result": result,
         "final_text": text,
         "request_state": None,
         "input_requests": None,
         "error": None,
+        "had_hitl": False,
     }
 
 
@@ -138,19 +153,30 @@ def human_input(state: AgentState) -> dict[str, Any]:
     return {
         "confirm_drop": _as_bool(answers.get("confirm_drop")),
         "environment_tag": str(answers.get("environment_tag") or "").strip(),
+        "had_hitl": True,
     }
 
 
 def retry_tool(state: AgentState) -> dict[str, Any]:
-    client = McpClient(_gateway_base_url())
+    console.trace(
+        "LangGraph node: retry_tool",
+        "New HTTP POST (new JSON-RPC id) with echoed requestState + inputResponses.",
+        "Any MCP replica behind the gateway can verify HMAC and continue.",
+    )
+    client = McpClient(_gateway_base_url(), verbose=True)
     request_state = state.get("request_state")
     if not request_state:
         msg = "Missing requestState for retry"
-        print(msg)
+        console.err("MRTR retry aborted", msg)
         return {"error": msg, "final_text": msg}
 
     confirm_drop = bool(state.get("confirm_drop"))
     environment_tag = str(state.get("environment_tag") or "").strip()
+    console.agent(
+        "Packaging operator answers as inputResponses",
+        f"confirm_drop={confirm_drop}",
+        f"environment_tag={environment_tag!r}",
+    )
     input_responses = McpClient.build_input_responses(
         confirm_drop=confirm_drop,
         environment_tag=environment_tag,
@@ -164,18 +190,14 @@ def retry_tool(state: AgentState) -> dict[str, Any]:
         )
     except McpClientError as exc:
         msg = f"Retry failed (fail-closed or protocol error): {exc}"
-        print(msg)
+        console.err("MRTR retry failed", msg)
         return {"error": str(exc), "final_text": msg, "last_result": None}
     except Exception as exc:  # noqa: BLE001
         msg = f"Retry failed: {exc}"
-        print(msg)
+        console.err("MRTR retry failed", msg)
         return {"error": str(exc), "final_text": msg}
 
     text = McpClient.result_text(result)
-    if "denied" in text.lower() or "cancelled" in text.lower():
-        print(f"Migration denied: {text}")
-    else:
-        print(f"Migration outcome: {text}")
     return {
         "last_result": result,
         "final_text": text,
@@ -202,16 +224,23 @@ def build_graph():
 
 
 def prompt_terminal_for_answers(interrupt_value: Any) -> dict[str, Any]:
-    print("\n=== Human-in-the-loop authorization required ===")
-    if isinstance(interrupt_value, dict):
-        print(interrupt_value.get("message", ""))
-        print(f"Cluster: {interrupt_value.get('cluster_id')}")
-        print(f"Script:  {interrupt_value.get('script_name')}")
-        print(f"Allowed environment_tag values: {interrupt_value.get('allowed_environment_tags')}")
-    confirm_raw = input("confirm_drop [true/false]: ").strip().lower()
+    console.hitl_prompt(interrupt_value)
+    confirm_raw = input(_c_prompt("confirm_drop [true/false]: ")).strip().lower()
     confirm_drop = confirm_raw in {"1", "true", "yes", "y"}
-    environment_tag = input(f"environment_tag {list(ENVIRONMENT_TAGS)}: ").strip()
+    environment_tag = input(
+        _c_prompt(f"environment_tag {list(ENVIRONMENT_TAGS)}: ")
+    ).strip()
+    console.agent(
+        "Operator answers captured",
+        f"confirm_drop={confirm_drop}",
+        f"environment_tag={environment_tag!r}",
+    )
     return {"confirm_drop": confirm_drop, "environment_tag": environment_tag}
+
+
+def _c_prompt(label: str) -> str:
+    # Keep prompts readable even without color helpers imported here.
+    return f"\n  {label}"
 
 
 def run_migration_agent(
@@ -221,6 +250,12 @@ def run_migration_agent(
     user_prompt: str | None = None,
     thread_id: str = "mrtr-demo",
 ) -> dict[str, Any]:
+    gateway = _gateway_base_url()
+    console.intro_banner(
+        cluster_id=cluster_id,
+        script_name=script_name,
+        gateway=gateway,
+    )
     app = build_graph()
     config = {"configurable": {"thread_id": thread_id}}
     initial: AgentState = {
@@ -228,6 +263,7 @@ def run_migration_agent(
         "script_name": script_name,
         "user_prompt": user_prompt
         or f"Apply emergency migration {script_name} on cluster {cluster_id}.",
+        "had_hitl": False,
     }
 
     result = app.invoke(initial, config)
@@ -250,8 +286,9 @@ def run_migration_agent(
 
     final_state = dict(app.get_state(config).values)
     final_text = final_state.get("final_text") or final_state.get("error") or "No result"
-    llm_note = final_state.get("llm_note")
-    if llm_note:
-        print(f"\nLLM: {llm_note}")
-    print(f"\nFinal: {final_text}")
+    console.summary(
+        final_text=str(final_text),
+        llm_note=final_state.get("llm_note"),
+        had_hitl=bool(final_state.get("had_hitl")),
+    )
     return final_state

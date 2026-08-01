@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, IO, TextIO
 
 import httpx
 from dotenv import load_dotenv
@@ -19,8 +19,10 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent
 GATEWAY_CONFIG = ROOT / "agentgateway.yaml"
 CONTRACT_GATEWAY = ROOT / "specs" / "001-mrtr-db-migration" / "contracts" / "agentgateway.yaml"
+LOG_DIR = ROOT / ".demo_logs"
 
 _CHILDREN: list[subprocess.Popen[Any]] = []
+_LOG_HANDLES: list[IO[Any]] = []
 
 
 def _cleanup() -> None:
@@ -31,6 +33,11 @@ def _cleanup() -> None:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
+    for handle in _LOG_HANDLES:
+        try:
+            handle.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _require_env() -> dict[str, str]:
@@ -55,8 +62,10 @@ def _require_env() -> dict[str, str]:
 
 
 def validate_llm(base_url: str, api_key: str) -> None:
+    from agent import console
+
     url = base_url.rstrip("/") + "/models"
-    print(f"Validating LM Studio at {url} ...")
+    console.trace("Validating LM Studio", f"GET {url}")
     try:
         with httpx.Client(timeout=5.0) as client:
             response = client.get(
@@ -65,23 +74,29 @@ def validate_llm(base_url: str, api_key: str) -> None:
             )
             response.raise_for_status()
     except Exception as exc:  # noqa: BLE001
-        print(
-            "FAIL: Local language-model endpoint is unreachable.\n"
-            f"  Tried: {url}\n"
-            f"  Error: {exc}\n"
-            "Start LM Studio (OpenAI-compatible server) and reload the model, then retry.",
-            file=sys.stderr,
+        console.err(
+            "LM Studio unreachable",
+            f"Tried: {url}",
+            f"Error: {exc}",
+            "Start LM Studio (OpenAI-compatible server) and load the model, then retry.",
         )
         sys.exit(1)
-    print("LM Studio connectivity OK.")
+    console.ok("LM Studio connectivity OK", f"base={base_url}")
 
 
 def ensure_gateway_config() -> None:
+    from agent import console
+
     if GATEWAY_CONFIG.exists():
+        console.trace(
+            "agentgateway.yaml present",
+            f"path={GATEWAY_CONFIG}",
+            "Must keep statefulMode: stateless (no Mcp-Session-Id pinning)",
+        )
         return
     if CONTRACT_GATEWAY.exists():
         GATEWAY_CONFIG.write_text(CONTRACT_GATEWAY.read_text(encoding="utf-8"), encoding="utf-8")
-        print(f"Wrote {GATEWAY_CONFIG} from contracts/")
+        console.trace("Wrote agentgateway.yaml from contracts/")
         return
     GATEWAY_CONFIG.write_text(
         """# yaml-language-server: $schema=https://agentgateway.dev/schema/config
@@ -95,7 +110,7 @@ mcp:
 """,
         encoding="utf-8",
     )
-    print(f"Wrote default {GATEWAY_CONFIG}")
+    console.trace("Wrote default agentgateway.yaml")
 
 
 def wait_for_port(url: str, *, timeout: float = 30.0) -> None:
@@ -112,8 +127,18 @@ def wait_for_port(url: str, *, timeout: float = 30.0) -> None:
     raise RuntimeError(f"Timed out waiting for {url}: {last_error}")
 
 
+def _open_log(name: str) -> TextIO:
+    LOG_DIR.mkdir(exist_ok=True)
+    handle = open(LOG_DIR / name, "w", encoding="utf-8")  # noqa: SIM115
+    _LOG_HANDLES.append(handle)
+    return handle
+
+
 def start_mcp_server(port: str) -> subprocess.Popen[Any]:
+    from agent import console
+
     env = os.environ.copy()
+    log = _open_log("mcp_server.log")
     proc = subprocess.Popen(
         [
             sys.executable,
@@ -129,33 +154,45 @@ def start_mcp_server(port: str) -> subprocess.Popen[Any]:
         ],
         cwd=str(ROOT),
         env=env,
+        stdout=log,
+        stderr=subprocess.STDOUT,
     )
     _CHILDREN.append(proc)
     wait_for_port(f"http://127.0.0.1:{port}/healthz")
-    print(f"MCP server listening on :{port}")
+    console.trace(
+        "MCP server ready",
+        f"http://127.0.0.1:{port}/mcp",
+        f"logs → {LOG_DIR / 'mcp_server.log'}",
+    )
     return proc
 
 
 def start_agentgateway() -> subprocess.Popen[Any]:
+    from agent import console
+
     binary = shutil.which("agentgateway")
     if not binary:
-        print(
-            "FAIL: `agentgateway` binary not found on PATH.\n"
-            "Install from https://agentgateway.dev/docs/standalone/latest/deployment/binary\n"
+        console.err(
+            "agentgateway not found on PATH",
+            "Install: curl -sL https://agentgateway.dev/install | bash",
             "Demo tool calls must route through agentgateway (constitution).",
-            file=sys.stderr,
         )
         sys.exit(1)
+    log = _open_log("agentgateway.log")
     proc = subprocess.Popen(
         [binary, "-f", str(GATEWAY_CONFIG)],
         cwd=str(ROOT),
+        stdout=log,
+        stderr=subprocess.STDOUT,
     )
     _CHILDREN.append(proc)
     port = os.getenv("AGENTGATEWAY_PORT", "8080")
     deadline = time.time() + 30
     while time.time() < deadline:
         if proc.poll() is not None:
-            raise RuntimeError("agentgateway exited early; check config and ports")
+            raise RuntimeError(
+                f"agentgateway exited early; see {LOG_DIR / 'agentgateway.log'}"
+            )
         try:
             with httpx.Client(timeout=1.0) as client:
                 client.post(
@@ -174,7 +211,12 @@ def start_agentgateway() -> subprocess.Popen[Any]:
             break
     else:
         raise RuntimeError("Timed out waiting for agentgateway")
-    print(f"agentgateway listening on :{port} (statefulMode: stateless)")
+    console.trace(
+        "agentgateway ready (statefulMode=stateless)",
+        f"http://127.0.0.1:{port}/mcp",
+        "★ No Mcp-Session-Id pinning — retries can hit any backend instance",
+        f"logs → {LOG_DIR / 'agentgateway.log'}",
+    )
     return proc
 
 
@@ -194,10 +236,6 @@ def main() -> None:
     from agent.graph import run_migration_agent
     from mcp_server.mrtr_types import DEFAULT_CLUSTER_ID, DEFAULT_SCRIPT_NAME
 
-    print(
-        f"\nStarting MRTR demo: cluster={DEFAULT_CLUSTER_ID} "
-        f"script={DEFAULT_SCRIPT_NAME}\n"
-    )
     run_migration_agent(
         cluster_id=DEFAULT_CLUSTER_ID,
         script_name=DEFAULT_SCRIPT_NAME,

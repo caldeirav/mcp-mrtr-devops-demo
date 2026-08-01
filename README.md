@@ -190,9 +190,20 @@ What the harness does automatically:
 1. Fail-fast check that LM Studio answers at `OPENAI_API_BASE`
 2. Ensures `agentgateway.yaml` exists (`statefulMode: stateless`, `:8080` → MCP `:8000/mcp`)
 3. Starts the MCP server on `MCP_SERVER_PORT` (default **8000**)
-4. Starts `agentgateway -f agentgateway.yaml` on **8080**
+4. Starts `agentgateway -f agentgateway.yaml` on **8080** (logs redirected to `.demo_logs/`)
 5. Runs the LangGraph agent for defaults **`prod-db-01`** / **`V004__drop_legacy_users.sql`**
 6. On Ctrl+C / exit, stops child processes
+
+Terminal output is banded so you can tell layers apart:
+
+| Band | Meaning |
+| --- | --- |
+| `TRACE` | Harness / LangGraph / HTTP execution |
+| `AGENT` | LLM narrative and packaged answers |
+| `HITL` | Your operator prompts (no open SSE socket) |
+| `SEP` | Detailed request/response + ★ what changed in 2026-07-28 / SEP-2322 |
+
+`SEP` panels highlight new fields (`resultType`, `requestState`, `inputRequests` / `inputResponses`, per-request `_meta`, `Mcp-Method` / `Mcp-Name`) and call out removed sticky-session behavior (`Mcp-Session-Id` absent). Set `NO_COLOR=1` to disable ANSI colors.
 
 ### Step 9 — Complete the human-in-the-loop prompts
 

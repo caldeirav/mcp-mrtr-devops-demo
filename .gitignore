@@ -151,6 +151,9 @@ activemq-data/
 .env
 .envrc
 .venv
+
+# Local demo harness logs (agentgateway / uvicorn redirected output)
+.demo_logs/
 env/
 venv/
 ENV/

@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from agent import console
 from mcp_server.mrtr_types import (
     ELICITATION_KEY,
     PROTOCOL_VERSION,
@@ -22,9 +23,16 @@ class McpClientError(Exception):
 
 
 class McpClient:
-    def __init__(self, base_url: str, *, timeout: float = 60.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout: float = 60.0,
+        verbose: bool = True,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self._verbose = verbose
         self._next_id = 1
 
     def _headers(self) -> dict[str, str]:
@@ -84,16 +92,24 @@ class McpClient:
             "method": "tools/call",
             "params": params,
         }
+        headers = self._headers()
+        phase = "retry" if request_state is not None else "initial"
+        url = f"{self.base_url}/mcp"
+
+        if self._verbose:
+            console.trace(
+                f"POST {url}",
+                f"phase={phase}  tool={TOOL_NAME}  jsonrpc_id={payload['id']}",
+                "Transport: Streamable HTTP via agentgateway (statefulMode=stateless)",
+            )
+            console.annotate_headers(headers)
+            console.annotate_request_body(payload, phase=phase)
 
         with httpx.Client(timeout=self._timeout) as client:
-            response = client.post(
-                f"{self.base_url}/mcp",
-                headers=self._headers(),
-                json=payload,
-            )
+            response = client.post(url, headers=headers, json=payload)
         if response.status_code >= 400:
             raise McpClientError(
-                f"HTTP {response.status_code} from {self.base_url}/mcp: {response.text[:300]}"
+                f"HTTP {response.status_code} from {url}: {response.text[:300]}"
             )
         body = self._parse_mcp_http_body(response)
         if "error" in body and body["error"]:
@@ -104,6 +120,16 @@ class McpClient:
             raise McpClientError("MCP result missing resultType")
         if result["resultType"] not in ("complete", "input_required"):
             raise McpClientError(f"Unsupported resultType: {result['resultType']}")
+
+        if self._verbose:
+            console.annotate_response(
+                result,
+                http_status=response.status_code,
+                content_type=response.headers.get("content-type", ""),
+            )
+            if result["resultType"] == "input_required":
+                console.sep_contrast_after_yield()
+
         return result
 
     @staticmethod

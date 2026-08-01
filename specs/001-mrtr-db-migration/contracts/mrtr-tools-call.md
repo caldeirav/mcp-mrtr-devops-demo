@@ -10,16 +10,20 @@
 | Header | Value |
 | --- | --- |
 | `Content-Type` | `application/json` |
-| `Mcp-Protocol-Version` | `2026-07-28` |
-
-Optional demo headers (validated when present):
-
-| Header | Value |
-| --- | --- |
+| `Accept` | `application/json, text/event-stream` |
+| `MCP-Protocol-Version` | `2026-07-28` |
 | `Mcp-Method` | `tools/call` |
 | `Mcp-Name` | `apply_db_migration` |
 
 **Forbidden**: `Mcp-Session-Id` (must not be required or emitted for demo success path).
+
+`params._meta` MUST include modern MCP 2026-07-28 keys (enforced by agentgateway):
+
+- `io.modelcontextprotocol/protocolVersion`
+- `io.modelcontextprotocol/clientInfo`
+- `io.modelcontextprotocol/clientCapabilities`
+
+Gateway responses may be `Content-Type: text/event-stream` with a `data:` JSON-RPC payload.
 
 ## Initial call (destructive)
 
@@ -33,6 +37,11 @@ Optional demo headers (validated when present):
     "arguments": {
       "cluster_id": "prod-db-01",
       "script_name": "V004__drop_legacy_users.sql"
+    },
+    "_meta": {
+      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+      "io.modelcontextprotocol/clientInfo": {"name": "mcp-mrtr-devops-demo", "version": "0.1.0"},
+      "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}}
     }
   }
 }

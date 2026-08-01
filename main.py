@@ -158,7 +158,14 @@ def start_agentgateway() -> subprocess.Popen[Any]:
             raise RuntimeError("agentgateway exited early; check config and ports")
         try:
             with httpx.Client(timeout=1.0) as client:
-                client.post(f"http://127.0.0.1:{port}/mcp", json={})
+                client.post(
+                    f"http://127.0.0.1:{port}/mcp",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json, text/event-stream",
+                    },
+                    json={},
+                )
             break
         except httpx.ConnectError:
             time.sleep(0.25)

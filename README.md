@@ -250,8 +250,11 @@ agentgateway -f agentgateway.yaml
 # Terminal C — smoke tools/call (should return input_required)
 curl -s http://127.0.0.1:8080/mcp \
   -H 'Content-Type: application/json' \
-  -H 'Mcp-Protocol-Version: 2026-07-28' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"apply_db_migration","arguments":{"cluster_id":"prod-db-01","script_name":"V004__drop_legacy_users.sql"}}}'
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2026-07-28' \
+  -H 'Mcp-Method: tools/call' \
+  -H 'Mcp-Name: apply_db_migration' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"apply_db_migration","arguments":{"cluster_id":"prod-db-01","script_name":"V004__drop_legacy_users.sql"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"curl","version":"0"},"io.modelcontextprotocol/clientCapabilities":{"elicitation":{}}}}}'
 ```
 
 ## Repository layout
@@ -287,6 +290,8 @@ More detail: [specs/001-mrtr-db-migration/quickstart.md](specs/001-mrtr-db-migra
 | HMAC / invalid `requestState` | Same `MCP_HMAC_SECRET` for the whole process; answer within 5 minutes |
 | Invalid environment tag | Exactly `dev`, `staging`, or `prod` (case-sensitive) |
 | Gateway returns unexpected session behavior | `agentgateway.yaml` must keep `statefulMode: stateless` |
+| HTTP 406 from gateway | Client must send `Accept: application/json, text/event-stream` |
+| `_meta.protocolVersion is required` | Include MCP 2026-07-28 `_meta` keys under `params` (see contracts) |
 
 ## License
 

@@ -24,7 +24,10 @@ def test_gateway_destructive_input_required():
             f"{GATEWAY}/mcp",
             headers={
                 "Content-Type": "application/json",
-                "Mcp-Protocol-Version": PROTOCOL_VERSION,
+                "Accept": "application/json, text/event-stream",
+                "MCP-Protocol-Version": PROTOCOL_VERSION,
+                "Mcp-Method": "tools/call",
+                "Mcp-Name": "apply_db_migration",
             },
             json={
                 "jsonrpc": "2.0",
@@ -36,11 +39,28 @@ def test_gateway_destructive_input_required():
                         "cluster_id": "prod-db-01",
                         "script_name": "V004__drop_legacy_users.sql",
                     },
+                    "_meta": {
+                        "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
+                        "io.modelcontextprotocol/clientInfo": {
+                            "name": "pytest-integration",
+                            "version": "0",
+                        },
+                        "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}},
+                    },
                 },
             },
         )
     assert response.status_code == 200
     # Stateless gateway must not require session stickiness for success
     assert "mcp-session-id" not in {k.lower() for k in response.headers.keys()}
-    body = response.json()
+    # Gateway may return JSON or SSE
+    if "text/event-stream" in response.headers.get("content-type", ""):
+        data_line = next(
+            line for line in reversed(response.text.splitlines()) if line.startswith("data:")
+        )
+        import json
+
+        body = json.loads(data_line[len("data:") :].strip())
+    else:
+        body = response.json()
     assert body.get("result", {}).get("resultType") == "input_required"

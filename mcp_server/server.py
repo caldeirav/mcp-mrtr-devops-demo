@@ -6,7 +6,7 @@ import os
 from typing import Any
 
 from fastapi import FastAPI, Header, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from mcp_server.crypto import RequestStateError, mint_request_state, verify_request_state
 from mcp_server.mrtr_types import (
@@ -26,6 +26,20 @@ from mcp_server.mrtr_types import (
 )
 
 app = FastAPI(title="MCP MRTR DevOps Demo", version="0.1.0")
+
+SERVER_NAME = "mcp-mrtr-devops-demo"
+SERVER_VERSION = "0.1.0"
+
+# Prefer 2026-07-28; also accept common client/gateway versions used by playgrounds.
+COMPATIBLE_PROTOCOL_VERSIONS = frozenset(
+    {
+        PROTOCOL_VERSION,
+        "2025-11-25",
+        "2025-06-18",
+        "2025-03-26",
+        "2024-11-05",
+    }
+)
 
 
 def _hmac_secret() -> str:
@@ -51,6 +65,52 @@ def _jsonrpc_result(req_id: Any, result: dict[str, Any]) -> JSONResponse:
 
 def _complete_text(text: str) -> dict[str, Any]:
     return CompleteResult(content=[TextContent(text=text)]).model_dump()
+
+
+def _tool_definition() -> dict[str, Any]:
+    return {
+        "name": TOOL_NAME,
+        "description": (
+            "Apply a database migration script to a cluster. Destructive script names "
+            "(containing 'drop' or 'destructive') yield SEP-2322 input_required HITL "
+            "before simulated apply."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cluster_id": {
+                    "type": "string",
+                    "description": "Target cluster identifier (default demo: prod-db-01)",
+                },
+                "script_name": {
+                    "type": "string",
+                    "description": (
+                        "Migration script filename "
+                        "(default demo: V004__drop_legacy_users.sql)"
+                    ),
+                },
+            },
+            "required": ["cluster_id", "script_name"],
+        },
+    }
+
+
+def _resolve_protocol_version(
+    header_version: str | None,
+    body: dict[str, Any],
+) -> str | None:
+    """Prefer HTTP header, then params._meta, else None (caller may default)."""
+    if header_version and header_version.strip():
+        return header_version.strip()
+    params = body.get("params") if isinstance(body.get("params"), dict) else {}
+    meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
+    nested = meta.get("io.modelcontextprotocol/protocolVersion")
+    if isinstance(nested, str) and nested.strip():
+        return nested.strip()
+    plain = meta.get("protocolVersion")
+    if isinstance(plain, str) and plain.strip():
+        return plain.strip()
+    return None
 
 
 def _build_input_required(cluster_id: str, script_name: str) -> dict[str, Any]:
@@ -140,6 +200,55 @@ def _handle_apply_db_migration(params: dict[str, Any]) -> dict[str, Any] | tuple
     )
 
 
+def _handle_initialize(_params: dict[str, Any]) -> dict[str, Any]:
+    # Advertise preferred modern version so playgrounds can continue after handshake.
+    return {
+        "protocolVersion": PROTOCOL_VERSION,
+        "capabilities": {
+            "tools": {"listChanged": False},
+        },
+        "serverInfo": {
+            "name": SERVER_NAME,
+            "version": SERVER_VERSION,
+        },
+        "instructions": (
+            "SEP-2322 MRTR demo server. Call apply_db_migration; destructive scripts "
+            "return resultType=input_required with HMAC requestState."
+        ),
+    }
+
+
+def _handle_server_discover(_params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "resultType": "complete",
+        "supportedVersions": [PROTOCOL_VERSION],
+        "capabilities": {
+            "tools": {"listChanged": False},
+        },
+        "instructions": (
+            "Stateless MCP 2026-07-28 server demonstrating SEP-2322 multi round-trip "
+            "HITL for destructive database migrations."
+        ),
+        "ttlMs": 3_600_000,
+        "cacheScope": "public",
+        "_meta": {
+            "io.modelcontextprotocol/serverInfo": {
+                "name": SERVER_NAME,
+                "version": SERVER_VERSION,
+            }
+        },
+    }
+
+
+def _handle_tools_list(_params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "resultType": "complete",
+        "tools": [_tool_definition()],
+        "ttlMs": 3_600_000,
+        "cacheScope": "public",
+    }
+
+
 @app.post("/mcp")
 async def mcp_endpoint(
     request: Request,
@@ -147,46 +256,71 @@ async def mcp_endpoint(
     mcp_method: str | None = Header(default=None, alias="Mcp-Method"),
     mcp_name: str | None = Header(default=None, alias="Mcp-Name"),
     mcp_session_id: str | None = Header(default=None, alias="Mcp-Session-Id"),
-) -> JSONResponse:
+) -> Response:
     # Constitution: never require sticky session headers. If a client sends one, ignore it.
     _ = mcp_session_id
 
-    if mcp_protocol_version != PROTOCOL_VERSION:
+    try:
         body = await request.json()
-        return _jsonrpc_error(
-            body.get("id") if isinstance(body, dict) else None,
-            -32600,
-            f"Mcp-Protocol-Version must be {PROTOCOL_VERSION}",
-        )
+    except Exception:  # noqa: BLE001
+        return _jsonrpc_error(None, -32700, "Parse error")
 
-    body = await request.json()
     if not isinstance(body, dict):
         return _jsonrpc_error(None, -32600, "Invalid JSON-RPC body")
 
     req_id = body.get("id")
     method = body.get("method")
     params = body.get("params") or {}
-
-    if mcp_method and mcp_method != method:
-        return _jsonrpc_error(req_id, -32600, "Mcp-Method header does not match body method")
-
-    if method != "tools/call":
-        return _jsonrpc_error(req_id, -32601, f"Method not found: {method}")
-
+    if params is None:
+        params = {}
     if not isinstance(params, dict):
         return _jsonrpc_error(req_id, -32602, "params must be an object")
 
-    tool_name = params.get("name")
-    if mcp_name and mcp_name != tool_name:
-        return _jsonrpc_error(req_id, -32600, "Mcp-Name header does not match tool name")
-    if tool_name != TOOL_NAME:
-        return _jsonrpc_error(req_id, -32601, f"Unknown tool: {tool_name}")
+    resolved_version = _resolve_protocol_version(mcp_protocol_version, body)
+    # Playground/gateway may omit the header or send an older client version.
+    # Accept compatible versions and default missing versions to the demo protocol.
+    if resolved_version is None:
+        resolved_version = PROTOCOL_VERSION
+    elif resolved_version not in COMPATIBLE_PROTOCOL_VERSIONS:
+        return _jsonrpc_error(
+            req_id,
+            -32600,
+            f"Unsupported Mcp-Protocol-Version {resolved_version!r}; "
+            f"supported={sorted(COMPATIBLE_PROTOCOL_VERSIONS)}",
+        )
 
-    outcome = _handle_apply_db_migration(params)
-    if isinstance(outcome, tuple):
-        code, message = outcome
-        return _jsonrpc_error(req_id, code, message)
-    return _jsonrpc_result(req_id, outcome)
+    if mcp_method and method and mcp_method != method:
+        return _jsonrpc_error(req_id, -32600, "Mcp-Method header does not match body method")
+
+    # JSON-RPC notifications have no id — acknowledge without a result body.
+    if req_id is None and isinstance(method, str) and method.startswith("notifications/"):
+        return Response(status_code=202)
+
+    if method == "ping":
+        return _jsonrpc_result(req_id, {})
+
+    if method == "initialize":
+        return _jsonrpc_result(req_id, _handle_initialize(params))
+
+    if method == "server/discover":
+        return _jsonrpc_result(req_id, _handle_server_discover(params))
+
+    if method == "tools/list":
+        return _jsonrpc_result(req_id, _handle_tools_list(params))
+
+    if method == "tools/call":
+        tool_name = params.get("name")
+        if mcp_name and mcp_name != tool_name:
+            return _jsonrpc_error(req_id, -32600, "Mcp-Name header does not match tool name")
+        if tool_name != TOOL_NAME:
+            return _jsonrpc_error(req_id, -32601, f"Unknown tool: {tool_name}")
+        outcome = _handle_apply_db_migration(params)
+        if isinstance(outcome, tuple):
+            code, message = outcome
+            return _jsonrpc_error(req_id, code, message)
+        return _jsonrpc_result(req_id, outcome)
+
+    return _jsonrpc_error(req_id, -32601, f"Method not found: {method}")
 
 
 @app.get("/healthz")

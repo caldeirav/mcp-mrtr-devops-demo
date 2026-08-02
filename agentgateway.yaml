@@ -1,10 +1,19 @@
 # yaml-language-server: $schema=https://agentgateway.dev/schema/config
-# Demo contract: copy/ensure at repo root as agentgateway.yaml
-# Constitution: statefulMode MUST remain stateless (no Mcp-Session-Id pinning).
 mcp:
   port: 8080
   statefulMode: stateless
   targets:
-    - name: devops-migration
-      mcp:
-        host: http://127.0.0.1:8000/mcp
+  - name: devops-migration
+    mcp:
+      host: http://127.0.0.1:8000/mcp
+  policies:
+    cors:
+      allowOrigins:
+      - http://localhost:15000
+      allowHeaders:
+      - '*'
+      allowMethods:
+      - GET
+      - POST
+      exposeHeaders:
+      - Mcp-Session-Id

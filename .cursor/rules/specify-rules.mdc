@@ -5,11 +5,12 @@ alwaysApply: true
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan at
-specs/001-mrtr-db-migration/plan.md
+specs/002-gateway-llm-tracing/plan.md
 
 Key stack: Python 3.11+ / uv; langgraph, langchain-openai, httpx, fastapi,
 uvicorn, pydantic, python-dotenv; agentgateway.yaml with statefulMode:
-stateless on port 8080; MCP 2026-07-28 SEP-2322 MRTR (resultType
+stateless on port 8080, llm custom→LM Studio, frontendPolicies.tracing→OTLP
+:4317; optional Jaeger :16686; MCP 2026-07-28 SEP-2322 MRTR (resultType
 complete|input_required, HMAC requestState); modules mcp_server/, agent/,
-main.py. See also specs/001-mrtr-db-migration/quickstart.md.
+main.py. See also specs/002-gateway-llm-tracing/quickstart.md.
 <!-- SPECKIT END -->

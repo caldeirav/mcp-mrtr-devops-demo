@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import httpx
 import pytest
@@ -6,6 +7,17 @@ import pytest
 from mcp_server.mrtr_types import PROTOCOL_VERSION
 
 GATEWAY = os.getenv("AGENTGATEWAY_URL", "http://127.0.0.1:8080")
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_gateway_config_routes_mcp_without_jaeger_dependency():
+    """Smoke: committed gateway config keeps MCP routing; Jaeger is optional."""
+    text = (ROOT / "agentgateway.yaml").read_text(encoding="utf-8")
+    assert "statefulMode: stateless" in text
+    assert "devops-migration" in text
+    assert "http://127.0.0.1:8000/mcp" in text
+    # Tracing may be configured, but runtime must not require Jaeger to be up
+    assert "ENABLE_JAEGER" not in text
 
 
 def _gateway_up() -> bool:

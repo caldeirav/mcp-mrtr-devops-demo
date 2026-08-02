@@ -51,6 +51,7 @@ def _banner(kind: str, title: str) -> None:
         "HITL": (_C.YELLOW, "HITL "),
         "SEP": (_C.MAGENTA, "SEP  "),
         "OK": (_C.GREEN, " OK  "),
+        "WARN": (_C.YELLOW, "WARN "),
         "ERR": (_C.RED, " ERR "),
     }
     color, label = styles.get(kind, (_C.WHITE, kind[:5]))
@@ -127,6 +128,13 @@ def hitl_prompt(interrupt_value: Any) -> None:
 
 def ok(title: str, *lines: str) -> None:
     _banner("OK", title)
+    for line in lines:
+        _line(line)
+    _end()
+
+
+def warn(title: str, *lines: str) -> None:
+    _banner("WARN", title)
     for line in lines:
         _line(line)
     _end()

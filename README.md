@@ -82,6 +82,8 @@ Follow these steps in order on macOS or Linux.
 | Model `qwen/qwen3.6-35b-a3b` (or matching `MODEL_NAME`) | Used by the LangGraph agent |
 | [`agentgateway`](https://agentgateway.dev/docs/standalone/latest/deployment/binary) on `PATH` | L7 proxy for tool calls (constitution: no gateway bypass) |
 | Free local ports **1234**, **8000**, **8080** | LLM, MCP server, agentgateway |
+| Port **15000** free (optional) | agentgateway admin UI / LLM playground |
+| [Docker](https://docs.docker.com/get-docker/) (optional) | Jaeger traces for pause/resume screenshots |
 
 ### Step 1 — Clone the repository
 
@@ -146,7 +148,11 @@ MODEL_NAME=qwen/qwen3.6-35b-a3b
 AGENTGATEWAY_PORT=8080
 MCP_SERVER_PORT=8000
 MCP_HMAC_SECRET=<long-random-secret>
+ENABLE_JAEGER=0
 ```
+
+Keep `MODEL_NAME` aligned with `llm.models[].params.model` in `agentgateway.yaml`.  
+LangGraph chat uses LM Studio **directly** (`OPENAI_API_BASE`); the gateway `llm` block is for the **admin UI playground**, not agent chat.
 
 Generate a secret if you do not have one:
 
@@ -188,11 +194,12 @@ uv run python main.py
 What the harness does automatically:
 
 1. Fail-fast check that LM Studio answers at `OPENAI_API_BASE`
-2. Ensures `agentgateway.yaml` exists (`statefulMode: stateless`, `:8080` → MCP `:8000/mcp`)
-3. Starts the MCP server on `MCP_SERVER_PORT` (default **8000**)
-4. Starts `agentgateway -f agentgateway.yaml` on **8080** (logs redirected to `.demo_logs/`)
-5. Runs the LangGraph agent for defaults **`prod-db-01`** / **`V004__drop_legacy_users.sql`**
-6. On Ctrl+C / exit, stops child processes
+2. Ensures `agentgateway.yaml` exists (`statefulMode: stateless`, `:8080` → MCP `:8000/mcp`, plus `llm` + OTLP tracing)
+3. If `ENABLE_JAEGER=1`, starts or reuses Docker Jaeger (`:16686` UI / `:4317` OTLP); warns and continues if Docker/Jaeger fails
+4. Starts the MCP server on `MCP_SERVER_PORT` (default **8000**)
+5. Starts `agentgateway -f agentgateway.yaml` on **8080** with `OPENAI_API_KEY` in the process env (logs → `.demo_logs/`)
+6. Runs the LangGraph agent for defaults **`prod-db-01`** / **`V004__drop_legacy_users.sql`**
+7. On Ctrl+C / exit, stops MCP + agentgateway; if the harness started Jaeger for this run, it `docker stop`s (does not `rm`) that container
 
 Terminal output is banded so you can tell layers apart:
 
@@ -204,6 +211,8 @@ Terminal output is banded so you can tell layers apart:
 | `SEP` | Detailed request/response + ★ what changed in 2026-07-28 / SEP-2322 |
 
 `SEP` panels highlight new fields (`resultType`, `requestState`, `inputRequests` / `inputResponses`, per-request `_meta`, `Mcp-Method` / `Mcp-Name`) and call out removed sticky-session behavior (`Mcp-Session-Id` absent). Set `NO_COLOR=1` to disable ANSI colors.
+
+While the harness is running (or with MCP + agentgateway started manually), you can also drive the same gateway from the **admin UI** — see [Demo steps in the agentgateway UI](#demo-steps-in-the-agentgateway-ui) below. That path is ideal for screenshots; the LangGraph terminal path remains the primary HITL story.
 
 ### Step 9 — Complete the human-in-the-loop prompts
 
@@ -239,12 +248,151 @@ Press `Ctrl+C` if the process is still running. The harness tears down MCP and a
 
 ---
 
+## Demo steps in the agentgateway UI
+
+Use this walkthrough for **screenshots and audience demos** of the gateway layer. It complements (does not replace) the LangGraph terminal HITL in Steps 8–9.
+
+**Prerequisites for UI demos**
+
+| Need | Check |
+| --- | --- |
+| MCP + agentgateway up | `uv run python main.py` **or** start MCP + `agentgateway -f agentgateway.yaml` with `OPENAI_API_KEY` in the gateway env |
+| LM Studio serving the demo model | `curl -s http://127.0.0.1:1234/v1/models` returns your model |
+| Config valid | `export OPENAI_API_KEY=lm-studio && agentgateway -f agentgateway.yaml --validate-only` |
+| CORS for the admin origin | `agentgateway.yaml` allows `http://localhost:15000` |
+
+**Ports**
+
+| Port | Service |
+| --- | --- |
+| `1234` | LM Studio OpenAI API |
+| `8000` | MCP server |
+| `8080` | agentgateway MCP proxy |
+| `15000` | agentgateway admin UI |
+| `4317` | OTLP gRPC (Jaeger, optional) |
+| `16686` | Jaeger UI (optional) |
+
+Contract / quickstart detail: [specs/002-gateway-llm-tracing/quickstart.md](specs/002-gateway-llm-tracing/quickstart.md).
+
+---
+
+### UI Step 1 — Open the admin console
+
+1. Browse to **[http://localhost:15000/ui/](http://localhost:15000/ui/)**.
+2. Confirm the UI loads (blank/error page usually means agentgateway is not running or port `15000` is blocked).
+3. Optionally open the architecture / targets view and confirm target **`devops-migration`** points at the local MCP upstream (`http://127.0.0.1:8000/mcp`) with **stateless** MCP mode (no sticky session pinning).
+
+---
+
+### UI Step 2 — Tool Playground: list `apply_db_migration`
+
+This shows the gateway can discover tools from the MCP server (same path the LangGraph agent uses via `:8080`).
+
+1. In the admin UI, open **Tool Playground** (or the MCP tools / playground section — label may vary slightly by agentgateway version).
+2. Select target / server **`devops-migration`** if prompted.
+3. Refresh or list tools.
+4. Confirm tool **`apply_db_migration`** appears with arguments `cluster_id` and `script_name`.
+
+If the list is empty or you see a protocol-version error, restart agentgateway with the repo `agentgateway.yaml` and ensure the MCP server is healthy on `:8000`.
+
+---
+
+### UI Step 3 — Tool Playground: destructive call → `input_required`
+
+Demonstrate SEP-2322 MRTR **without** the LangGraph terminal (great for a slide).
+
+1. In Tool Playground, choose **`apply_db_migration`**.
+2. Set arguments:
+   - `cluster_id`: `prod-db-01`
+   - `script_name`: `V004__drop_legacy_users.sql`
+3. Send / invoke the tool.
+4. Inspect the JSON result. You should see:
+   - top-level **`resultType`: `"input_required"`**
+   - **`requestState`** (HMAC continuation handle)
+   - **`inputRequests`** with a form asking for `confirm_drop` and `environment_tag`
+5. Call out to the audience: the HTTP response finished; there is **no** open SSE GET and **no** `Mcp-Session-Id` required to continue later.
+
+**Screenshot tip:** Capture the `input_required` payload with `resultType` and `requestState` visible.
+
+---
+
+### UI Step 4 — Tool Playground: resume → `complete` (optional)
+
+If the UI supports filling elicitation / `inputResponses` on retry:
+
+1. Resubmit the same tool with the same `cluster_id` / `script_name`.
+2. Include the echoed **`requestState`** from Step 3.
+3. Provide acceptance answers, e.g. `confirm_drop: true`, `environment_tag: "prod"`.
+4. Confirm **`resultType`: `"complete"`** and a simulated apply summary.
+
+If the playground UI does not yet expose a clean resume form, switch to the **LangGraph terminal** (Step 9) or the `curl` example under [Manual component checks](#manual-component-checks-optional) for the resume round-trip—then return to Jaeger (UI Step 6) to show both spans.
+
+**Non-destructive contrast (optional):** call the tool with a script name that does **not** contain `drop` / `destructive` (e.g. `V001__init.sql`) and show an immediate **`resultType`: `"complete"`** with no pause.
+
+---
+
+### UI Step 5 — LLM playground: probe LM Studio via the gateway
+
+Gateway `llm` targets LM Studio at `http://127.0.0.1:1234/v1`. The LangGraph agent still chats with LM Studio **directly**; this step is for console/demo proof that the gateway LLM path works.
+
+1. In the admin UI, open **LLM** / **LLM playground** (agentgateway 1.3+).
+2. Select model **`qwen/qwen3.6-35b-a3b`** (or whichever model LM Studio currently serves — keep it aligned with `.env` `MODEL_NAME` and `agentgateway.yaml` `llm.params.model`).
+3. Optionally set a short system prompt (e.g. “You are a concise demo assistant.”).
+4. Send a user message such as: `Reply with the single word: pong`.
+5. Confirm a successful model reply and, if shown, latency / token metrics.
+
+If the model list is empty: verify LM Studio is up, `OPENAI_API_KEY` is present in the agentgateway process environment, and re-validate the config (`--validate-only`).
+
+---
+
+### UI Step 6 — Optional: inspect traces in Jaeger after UI / terminal runs
+
+Tracing is configured in `agentgateway.yaml` (`frontendPolicies.tracing` → `localhost:4317`, full sampling). The core HITL demo does **not** require Jaeger.
+
+**Start Jaeger**
+
+```bash
+# Option A — harness (.env)
+ENABLE_JAEGER=1
+uv run python main.py
+
+# Option B — manual
+docker run -d --name jaeger \
+  -p 16686:16686 \
+  -p 4317:4317 \
+  jaegertracing/all-in-one:latest
+# or: docker start jaeger
+```
+
+**After** Tool Playground pause+resume and/or a full LangGraph HITL run:
+
+1. Open **[http://localhost:16686](http://localhost:16686)**.
+2. Find recent traces for gateway / MCP traffic.
+3. Confirm **two** tool round-trips are distinguishable (initial `input_required` path and resume/`complete` path).
+
+If Jaeger is down, the migration demo still succeeds; the UI will simply show no new spans.
+
+---
+
+### Suggested presenter order
+
+| Order | Where | What you show |
+| --- | --- | --- |
+| 1 | Terminal | `uv run python main.py` — harness + TRACE/AGENT bands |
+| 2 | Admin UI | Tool Playground → `apply_db_migration` → `input_required` |
+| 3 | Terminal | HITL answers (`confirm_drop` / `environment_tag`) → `complete` |
+| 4 | Admin UI | LLM playground → short LM Studio probe |
+| 5 | Jaeger (optional) | Two MCP round-trips for pause + resume |
+
+---
+
 ## What you just demonstrated
 
-1. Destructive tool call → `resultType: input_required` + HMAC `requestState`
+1. Destructive tool call → `resultType: input_required` + HMAC `requestState` (terminal agent and/or admin **Tool Playground**)
 2. Socket closed; no sticky `Mcp-Session-Id`
-3. Operator input in the terminal
+3. Operator input in the terminal (or playground resume, if supported)
 4. Retry via **agentgateway** → any-ready MCP instance can verify state and finish with `resultType: complete`
+5. (Optional) Gateway **LLM playground** reaches LM Studio; Jaeger shows pause + resume spans
 
 ## Manual component checks (optional)
 
@@ -271,12 +419,13 @@ curl -s http://127.0.0.1:8080/mcp \
 ## Repository layout
 
 ```text
-main.py                 # one-command harness
-agentgateway.yaml       # L7 proxy (stateless)
+main.py                 # one-command harness (+ optional Jaeger)
+agentgateway.yaml       # L7 proxy (stateless MCP + llm + OTLP tracing)
 mcp_server/             # FastAPI MCP tool + HMAC crypto
 agent/                  # LangGraph client + httpx MCP client
-.env.example            # config template
-specs/001-mrtr-db-migration/   # Spec Kit artifacts (spec, plan, tasks, contracts)
+.env.example            # config template (incl. ENABLE_JAEGER)
+specs/001-mrtr-db-migration/     # MRTR HITL Spec Kit artifacts
+specs/002-gateway-llm-tracing/   # LLM playground + Jaeger Spec Kit artifacts
 ```
 
 ## Governing principles
@@ -289,7 +438,7 @@ Project rules live in [`.specify/memory/constitution.md`](.specify/memory/consti
 4. **Infrastructure Integration** — tools via agentgateway `:8080`; LM Studio as above  
 5. **Modular Verification** — separable MCP server, agentgateway, and LangGraph runloop  
 
-More detail: [specs/001-mrtr-db-migration/quickstart.md](specs/001-mrtr-db-migration/quickstart.md).
+More detail: [specs/001-mrtr-db-migration/quickstart.md](specs/001-mrtr-db-migration/quickstart.md) and [specs/002-gateway-llm-tracing/quickstart.md](specs/002-gateway-llm-tracing/quickstart.md).
 
 ## Troubleshooting
 
@@ -297,12 +446,14 @@ More detail: [specs/001-mrtr-db-migration/quickstart.md](specs/001-mrtr-db-migra
 | --- | --- |
 | Fail-fast: LLM unreachable | LM Studio server running on `:1234`; model loaded; `OPENAI_API_BASE` / `MODEL_NAME` match |
 | `agentgateway` not found | Re-run install script; confirm `which agentgateway` |
-| Port already in use | Stop other listeners on 8000/8080/1234 |
+| Port already in use | Stop other listeners on 8000/8080/1234 (also 15000/4317/16686 if using UI/Jaeger) |
 | HMAC / invalid `requestState` | Same `MCP_HMAC_SECRET` for the whole process; answer within 5 minutes |
 | Invalid environment tag | Exactly `dev`, `staging`, or `prod` (case-sensitive) |
 | Gateway returns unexpected session behavior | `agentgateway.yaml` must keep `statefulMode: stateless` |
 | HTTP 406 from gateway | Client must send `Accept: application/json, text/event-stream` |
 | `_meta.protocolVersion is required` | Include MCP 2026-07-28 `_meta` keys under `params` (see contracts) |
+| LLM playground empty / errors | `OPENAI_API_KEY` exported for agentgateway; LM Studio up; `llm.params.model` matches loaded model |
+| No traces in Jaeger | Collector on `:4317`; `frontendPolicies.tracing` present; re-run a tool call; `ENABLE_JAEGER=1` or manual `docker start jaeger` |
 
 ## License
 

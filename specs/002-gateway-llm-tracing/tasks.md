@@ -28,8 +28,8 @@ description: "Task list for agentgateway LLM playground and OTLP/Jaeger observab
 
 **Purpose**: Align env templates and confirm contract artifacts are the source of truth
 
-- [ ] T001 [P] Extend `.env.example` with `ENABLE_JAEGER=0`, comments for ports `15000` (admin UI), `16686` (Jaeger UI), `4317` (OTLP), and a note that `MODEL_NAME` / `OPENAI_API_*` must stay aligned with `agentgateway.yaml` `llm.params`
-- [ ] T002 [P] Confirm committed contracts exist and are complete under `specs/002-gateway-llm-tracing/contracts/` (`agentgateway.yaml`, `llm-playground.md`, `observability.md`)—fix gaps only if validate-only or docs drift
+- [x] T001 [P] Extend `.env.example` with `ENABLE_JAEGER=0`, comments for ports `15000` (admin UI), `16686` (Jaeger UI), `4317` (OTLP), and a note that `MODEL_NAME` / `OPENAI_API_*` must stay aligned with `agentgateway.yaml` `llm.params`
+- [x] T002 [P] Confirm committed contracts exist and are complete under `specs/002-gateway-llm-tracing/contracts/` (`agentgateway.yaml`, `llm-playground.md`, `observability.md`)—fix gaps only if validate-only or docs drift
 
 ---
 
@@ -39,11 +39,11 @@ description: "Task list for agentgateway LLM playground and OTLP/Jaeger observab
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 Point `CONTRACT_GATEWAY` in `main.py` at `specs/002-gateway-llm-tracing/contracts/agentgateway.yaml` (replace `001-…` fallback path)
-- [ ] T004 Ensure `start_agentgateway()` in `main.py` passes `OPENAI_API_KEY` (and other needed env) into the agentgateway subprocess environment so `$OPENAI_API_KEY` expands for `llm.params.apiKey`
-- [ ] T005 Sync repo-root `agentgateway.yaml` from `specs/002-gateway-llm-tracing/contracts/agentgateway.yaml` and verify with `agentgateway -f agentgateway.yaml --validate-only` (export `OPENAI_API_KEY` for validation)
-- [ ] T006 [P] Add lightweight contract test asserting required keys (`llm`, `frontendPolicies.tracing`, `mcp.statefulMode: stateless`, `devops-migration`) in root `agentgateway.yaml` in `tests/contract/test_gateway_llm_tracing_config.py`
-- [ ] T007 [P] Add lightweight contract test that `.env.example` documents `ENABLE_JAEGER`, `OPENAI_API_BASE`, `MODEL_NAME` in `tests/contract/test_env_example_observability.py`
+- [x] T003 Point `CONTRACT_GATEWAY` in `main.py` at `specs/002-gateway-llm-tracing/contracts/agentgateway.yaml` (replace `001-…` fallback path)
+- [x] T004 Ensure `start_agentgateway()` in `main.py` passes `OPENAI_API_KEY` (and other needed env) into the agentgateway subprocess environment so `$OPENAI_API_KEY` expands for `llm.params.apiKey`
+- [x] T005 Sync repo-root `agentgateway.yaml` from `specs/002-gateway-llm-tracing/contracts/agentgateway.yaml` and verify with `agentgateway -f agentgateway.yaml --validate-only` (export `OPENAI_API_KEY` for validation)
+- [x] T006 [P] Add lightweight contract test asserting required keys (`llm`, `frontendPolicies.tracing`, `mcp.statefulMode: stateless`, `devops-migration`) in root `agentgateway.yaml` in `tests/contract/test_gateway_llm_tracing_config.py`
+- [x] T007 [P] Add lightweight contract test that `.env.example` documents `ENABLE_JAEGER`, `OPENAI_API_BASE`, `MODEL_NAME` in `tests/contract/test_env_example_observability.py`
 
 **Checkpoint**: Foundation ready — root config validates; harness can spawn gateway with LLM env; contract tests green
 
@@ -57,10 +57,10 @@ description: "Task list for agentgateway LLM playground and OTLP/Jaeger observab
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] Ensure root `agentgateway.yaml` `llm` block matches `contracts/llm-playground.md` (`provider.custom`, `completions`, `baseUrl: http://127.0.0.1:1234/v1`, `model: qwen/qwen3.6-35b-a3b`, `apiKey: $OPENAI_API_KEY`, match `"*"`) while keeping `mcp` target `devops-migration` and `statefulMode: stateless`
-- [ ] T009 [US1] Preserve/adjust CORS under `mcp.policies.cors` for `http://localhost:15000` in `agentgateway.yaml` (no sticky-session pinning; do not reintroduce `Mcp-Session-Id` exposeHeaders)
-- [ ] T010 [P] [US1] Document LLM playground verification steps (UI URL, model check, probe prompt) in `README.md` (link or embed from `specs/002-gateway-llm-tracing/quickstart.md` §3)
-- [ ] T011 [US1] Manually smoke-check: start LM Studio + `uv run python main.py` (or gateway alone), confirm LLM section lists/uses demo model; note any binary/UI quirks in `specs/002-gateway-llm-tracing/quickstart.md` if found
+- [x] T008 [US1] Ensure root `agentgateway.yaml` `llm` block matches `contracts/llm-playground.md` (`provider.custom`, `completions`, `baseUrl: http://127.0.0.1:1234/v1`, `model: qwen/qwen3.6-35b-a3b`, `apiKey: $OPENAI_API_KEY`, match `"*"`) while keeping `mcp` target `devops-migration` and `statefulMode: stateless`
+- [x] T009 [US1] Preserve/adjust CORS under `mcp.policies.cors` for `http://localhost:15000` in `agentgateway.yaml` (no sticky-session pinning; do not reintroduce `Mcp-Session-Id` exposeHeaders)
+- [x] T010 [P] [US1] Document LLM playground verification steps (UI URL, model check, probe prompt) in `README.md` (link or embed from `specs/002-gateway-llm-tracing/quickstart.md` §3)
+- [x] T011 [US1] Manually smoke-check: start LM Studio + `uv run python main.py` (or gateway alone), confirm LLM section lists/uses demo model; note any binary/UI quirks in `specs/002-gateway-llm-tracing/quickstart.md` if found
 
 **Checkpoint**: US1 MVP — gateway console LLM playground works against LM Studio without breaking MCP tooling
 
@@ -74,11 +74,11 @@ description: "Task list for agentgateway LLM playground and OTLP/Jaeger observab
 
 ### Implementation for User Story 2
 
-- [ ] T012 [US2] Ensure `frontendPolicies.tracing` (`host: localhost:4317`, `randomSampling: true`) is present in root `agentgateway.yaml` per `contracts/observability.md` and re-run `--validate-only`
-- [ ] T013 [US2] Implement optional Jaeger lifecycle in `main.py`: when `ENABLE_JAEGER=1`, start or reuse Docker container `jaeger` (`jaegertracing/all-in-one`, ports `16686`/`4317`); on failure **warn and continue**; never fail HITL solely because Jaeger is down
-- [ ] T014 [US2] Add teardown-friendly handling in `main.py` (do not force-remove a pre-existing user Jaeger container; optional stop only if harness created it—document choice in code comment)
-- [ ] T015 [P] [US2] Document Jaeger docker run/start, UI URL, and pause/resume verification checklist in `README.md` (from `contracts/observability.md` / quickstart §4)
-- [ ] T016 [US2] Manually smoke-check: `ENABLE_JAEGER=1` (or manual docker run) + destructive HITL; confirm two round-trips visible in `http://localhost:16686`; confirm `ENABLE_JAEGER=0` still completes HITL
+- [x] T012 [US2] Ensure `frontendPolicies.tracing` (`host: localhost:4317`, `randomSampling: true`) is present in root `agentgateway.yaml` per `contracts/observability.md` and re-run `--validate-only`
+- [x] T013 [US2] Implement optional Jaeger lifecycle in `main.py`: when `ENABLE_JAEGER=1`, start or reuse Docker container `jaeger` (`jaegertracing/all-in-one`, ports `16686`/`4317`); on failure **warn and continue**; never fail HITL solely because Jaeger is down
+- [x] T014 [US2] Add teardown-friendly handling in `main.py` (do not force-remove a pre-existing user Jaeger container; optional stop only if harness created it—document choice in code comment)
+- [x] T015 [P] [US2] Document Jaeger docker run/start, UI URL, and pause/resume verification checklist in `README.md` (from `contracts/observability.md` / quickstart §4)
+- [x] T016 [US2] Manually smoke-check: `ENABLE_JAEGER=1` (or manual docker run) + destructive HITL; confirm two round-trips visible in `http://localhost:16686`; confirm `ENABLE_JAEGER=0` still completes HITL
 
 **Checkpoint**: US2 — traces optional but demonstrable; core demo never hard-depends on Jaeger
 
@@ -92,9 +92,9 @@ description: "Task list for agentgateway LLM playground and OTLP/Jaeger observab
 
 ### Implementation for User Story 3
 
-- [ ] T017 [P] [US3] Expand `README.md` with a dedicated section covering LLM playground + Jaeger (ports cheat sheet, optional tracing, links to `specs/002-gateway-llm-tracing/quickstart.md`)
-- [ ] T018 [P] [US3] Sync `specs/002-gateway-llm-tracing/quickstart.md` with any harness flag names / behaviors implemented in `main.py` (especially `ENABLE_JAEGER`)
-- [ ] T019 [US3] Ensure `.env.example` and README agree on defaults (`ENABLE_JAEGER=0`) and that secrets guidance remains “never commit real `.env`”
+- [x] T017 [P] [US3] Expand `README.md` with a dedicated section covering LLM playground + Jaeger (ports cheat sheet, optional tracing, links to `specs/002-gateway-llm-tracing/quickstart.md`)
+- [x] T018 [P] [US3] Sync `specs/002-gateway-llm-tracing/quickstart.md` with any harness flag names / behaviors implemented in `main.py` (especially `ENABLE_JAEGER`)
+- [x] T019 [US3] Ensure `.env.example` and README agree on defaults (`ENABLE_JAEGER=0`) and that secrets guidance remains “never commit real `.env`”
 
 **Checkpoint**: US3 — operator path is complete and consistent across docs/env/contracts
 
@@ -108,9 +108,9 @@ description: "Task list for agentgateway LLM playground and OTLP/Jaeger observab
 
 ### Implementation for User Story 4
 
-- [ ] T020 [US4] Verify `agent/graph.py` `_build_llm()` still targets `OPENAI_API_BASE` / `MODEL_NAME` directly; add a short README note that gateway LLM is for admin playground, not agent chat
-- [ ] T021 [US4] Run regression: `uv run pytest tests/ -q` and one interactive destructive harness path; fix any breakage from gateway YAML/CORS/env changes in `main.py` / `agentgateway.yaml` only as needed
-- [ ] T022 [P] [US4] Add skip-friendly integration note or smoke assertion (if low-friction) that gateway config still routes MCP in `tests/integration/test_gateway_mrtr.py` without requiring Jaeger
+- [x] T020 [US4] Verify `agent/graph.py` `_build_llm()` still targets `OPENAI_API_BASE` / `MODEL_NAME` directly; add a short README note that gateway LLM is for admin playground, not agent chat
+- [x] T021 [US4] Run regression: `uv run pytest tests/ -q` and one interactive destructive harness path; fix any breakage from gateway YAML/CORS/env changes in `main.py` / `agentgateway.yaml` only as needed
+- [x] T022 [P] [US4] Add skip-friendly integration note or smoke assertion (if low-friction) that gateway config still routes MCP in `tests/integration/test_gateway_mrtr.py` without requiring Jaeger
 
 **Checkpoint**: US4 — HITL demo reliability preserved alongside console LLM + optional traces
 
@@ -120,10 +120,10 @@ description: "Task list for agentgateway LLM playground and OTLP/Jaeger observab
 
 **Purpose**: Final consistency across contracts, root config, and docs
 
-- [ ] T023 [P] Diff root `agentgateway.yaml` vs `specs/002-gateway-llm-tracing/contracts/agentgateway.yaml` and eliminate drift
-- [ ] T024 [P] Update `.cursor/rules/specify-rules.mdc` only if plan/quickstart pointers or stack summary drifted during implement
-- [ ] T025 Run full checklist from `specs/002-gateway-llm-tracing/quickstart.md` (LLM probe + optional Jaeger + harness HITL) and fix any doc/code mismatches found
-- [ ] T026 [P] Confirm `uv run pytest tests/ -q` passes (including new contract tests)
+- [x] T023 [P] Diff root `agentgateway.yaml` vs `specs/002-gateway-llm-tracing/contracts/agentgateway.yaml` and eliminate drift
+- [x] T024 [P] Update `.cursor/rules/specify-rules.mdc` only if plan/quickstart pointers or stack summary drifted during implement
+- [x] T025 Run full checklist from `specs/002-gateway-llm-tracing/quickstart.md` (LLM probe + optional Jaeger + harness HITL) and fix any doc/code mismatches found
+- [x] T026 [P] Confirm `uv run pytest tests/ -q` passes (including new contract tests)
 
 ---
 

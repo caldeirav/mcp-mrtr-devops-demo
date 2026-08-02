@@ -17,6 +17,7 @@ OPENAI_API_BASE=http://127.0.0.1:1234/v1
 OPENAI_API_KEY=lm-studio
 MODEL_NAME=qwen/qwen3.6-35b-a3b
 ENABLE_JAEGER=0          # set 1 to auto-start/reuse Jaeger from main.py
+# CONTAINER_RUNTIME=podman  # optional; default prefers podman, then docker
 ```
 
 Keep `MODEL_NAME` aligned with `llm.models[].params.model` in `agentgateway.yaml`.  
@@ -68,9 +69,22 @@ uv run python main.py
 
 Behavior (`main.py`):
 
-- Starts or reuses Docker container named `jaeger` (`jaegertracing/all-in-one:latest`, ports `16686`/`4317`).
-- On failure (no Docker, port conflict, etc.): **warns and continues** — HITL is not blocked.
-- On exit: if the harness started/restarted Jaeger for this run, it runs `docker stop jaeger` (never `docker rm`).
+- Prefers **Podman**, then Docker (`CONTAINER_RUNTIME` overrides).
+- Starts or reuses container named `jaeger` (`jaegertracing/all-in-one:latest`, ports `16686`/`4317`).
+- Checks `podman info` / `docker info` first so a stopped Podman machine fails soft with a clear warning.
+- On failure (no CLI, engine down, port conflict, etc.): **warns and continues** — HITL is not blocked.
+- On exit: if the harness started/restarted Jaeger for this run, it runs `podman stop` / `docker stop` (never `rm`).
+
+### Manual Podman (recommended without Docker)
+
+```bash
+podman machine start   # if using Podman Desktop / a VM
+podman run -d --name jaeger \
+  -p 16686:16686 \
+  -p 4317:4317 \
+  jaegertracing/all-in-one:latest
+# or: podman start jaeger
+```
 
 ### Manual Docker
 

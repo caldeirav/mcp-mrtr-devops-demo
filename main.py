@@ -29,10 +29,29 @@ _CHILDREN: list[subprocess.Popen[Any]] = []
 _LOG_HANDLES: list[IO[Any]] = []
 # Only stop Jaeger on exit if this harness created/started it for the run.
 _JAEGER_STARTED_BY_HARNESS = False
+_CONTAINER_CLI: str | None = None
+
+
+def resolve_container_cli() -> str | None:
+    """Return podman or docker binary path.
+
+    Order:
+    1. ``CONTAINER_RUNTIME`` env (``podman`` | ``docker`` | absolute path)
+    2. Prefer ``podman`` on PATH, then ``docker`` (Podman-first for this demo)
+    """
+    preferred = (os.getenv("CONTAINER_RUNTIME") or "").strip()
+    if preferred:
+        if preferred in {"podman", "docker"}:
+            return shutil.which(preferred)
+        # Absolute or bare command name
+        if os.path.isabs(preferred) and os.access(preferred, os.X_OK):
+            return preferred
+        return shutil.which(preferred)
+    return shutil.which("podman") or shutil.which("docker")
 
 
 def _cleanup() -> None:
-    global _JAEGER_STARTED_BY_HARNESS
+    global _JAEGER_STARTED_BY_HARNESS, _CONTAINER_CLI
     for proc in reversed(_CHILDREN):
         if proc.poll() is None:
             proc.terminate()
@@ -45,11 +64,11 @@ def _cleanup() -> None:
             handle.close()
         except Exception:  # noqa: BLE001
             pass
-    # Do not docker rm — preserve a presenter’s pre-existing Jaeger data/container.
+    # Do not rm the container — preserve a presenter’s pre-existing Jaeger data.
     # Only stop a container this harness started for the current run.
-    if _JAEGER_STARTED_BY_HARNESS and shutil.which("docker"):
+    if _JAEGER_STARTED_BY_HARNESS and _CONTAINER_CLI:
         subprocess.run(
-            ["docker", "stop", JAEGER_CONTAINER],
+            [_CONTAINER_CLI, "stop", JAEGER_CONTAINER],
             check=False,
             capture_output=True,
         )
@@ -150,29 +169,55 @@ mcp:
 
 
 def maybe_start_jaeger() -> None:
-    """Start or reuse Jaeger when ENABLE_JAEGER=1. Never fail the HITL demo."""
-    global _JAEGER_STARTED_BY_HARNESS
+    """Start or reuse Jaeger when ENABLE_JAEGER=1. Never fail the HITL demo.
+
+    Uses Podman by default when available; Docker otherwise. Override with
+    ``CONTAINER_RUNTIME=podman|docker``.
+    """
+    global _JAEGER_STARTED_BY_HARNESS, _CONTAINER_CLI
     from agent import console
 
     if not _truthy(os.getenv("ENABLE_JAEGER")):
         console.trace(
             "Jaeger skipped",
             "ENABLE_JAEGER unset/0 — HITL demo continues without traces",
-            "Set ENABLE_JAEGER=1 or: docker run -d --name jaeger "
-            "-p 16686:16686 -p 4317:4317 jaegertracing/all-in-one:latest",
+            "Set ENABLE_JAEGER=1 (uses podman if available, else docker), or:",
+            "podman run -d --name jaeger -p 16686:16686 -p 4317:4317 "
+            f"{JAEGER_IMAGE}",
         )
         return
 
-    docker = shutil.which("docker")
-    if not docker:
+    cli = resolve_container_cli()
+    if not cli:
         console.warn(
-            "ENABLE_JAEGER=1 but docker not on PATH",
+            "ENABLE_JAEGER=1 but neither podman nor docker is on PATH",
+            "Install Podman (or Docker), ensure the engine is running "
+            "(e.g. podman machine start), then retry",
             "Traces will be empty; continuing with MCP + agentgateway HITL demo",
         )
         return
 
+    cli_name = Path(cli).name
+    _CONTAINER_CLI = cli
+
+    # Fail soft if the engine/VM is not running (common with Podman Desktop).
+    info = subprocess.run(
+        [cli, "info"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if info.returncode != 0:
+        console.warn(
+            f"ENABLE_JAEGER=1 but {cli_name} engine is not ready",
+            (info.stderr or info.stdout or "").strip()[:400],
+            "Try: podman machine start   (or start Podman Desktop / Docker Desktop)",
+            "Continuing without traces",
+        )
+        return
+
     inspect = subprocess.run(
-        [docker, "inspect", "-f", "{{.State.Running}}", JAEGER_CONTAINER],
+        [cli, "inspect", "-f", "{{.State.Running}}", JAEGER_CONTAINER],
         capture_output=True,
         text=True,
         check=False,
@@ -182,12 +227,13 @@ def maybe_start_jaeger() -> None:
         if running:
             console.ok(
                 "Jaeger already running",
+                f"runtime={cli_name}",
                 "UI http://localhost:16686",
                 "OTLP gRPC localhost:4317",
             )
             return
         start = subprocess.run(
-            [docker, "start", JAEGER_CONTAINER],
+            [cli, "start", JAEGER_CONTAINER],
             capture_output=True,
             text=True,
             check=False,
@@ -196,8 +242,9 @@ def maybe_start_jaeger() -> None:
             _JAEGER_STARTED_BY_HARNESS = True
             console.ok(
                 "Started existing Jaeger container",
+                f"runtime={cli_name}",
                 "UI http://localhost:16686",
-                "Harness will docker stop (not rm) this container on exit",
+                f"Harness will `{cli_name} stop` (not rm) this container on exit",
             )
             return
         console.warn(
@@ -209,7 +256,7 @@ def maybe_start_jaeger() -> None:
 
     run = subprocess.run(
         [
-            docker,
+            cli,
             "run",
             "-d",
             "--name",
@@ -228,10 +275,11 @@ def maybe_start_jaeger() -> None:
         _JAEGER_STARTED_BY_HARNESS = True
         console.ok(
             "Jaeger started",
+            f"runtime={cli_name}",
             f"image={JAEGER_IMAGE}",
             "UI http://localhost:16686",
             "OTLP gRPC localhost:4317",
-            "Harness will docker stop (not rm) this container on exit",
+            f"Harness will `{cli_name} stop` (not rm) this container on exit",
         )
         return
 

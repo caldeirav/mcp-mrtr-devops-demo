@@ -83,7 +83,7 @@ Follow these steps in order on macOS or Linux.
 | [`agentgateway`](https://agentgateway.dev/docs/standalone/latest/deployment/binary) on `PATH` | L7 proxy for tool calls (constitution: no gateway bypass) |
 | Free local ports **1234**, **8000**, **8080** | LLM, MCP server, agentgateway |
 | Port **15000** free (optional) | agentgateway admin UI / LLM playground |
-| [Docker](https://docs.docker.com/get-docker/) (optional) | Jaeger traces for pause/resume screenshots |
+| [Podman](https://podman.io/) or [Docker](https://docs.docker.com/get-docker/) (optional) | Jaeger traces for pause/resume screenshots (harness prefers Podman) |
 
 ### Step 1 — Clone the repository
 
@@ -149,6 +149,7 @@ AGENTGATEWAY_PORT=8080
 MCP_SERVER_PORT=8000
 MCP_HMAC_SECRET=<long-random-secret>
 ENABLE_JAEGER=0
+# CONTAINER_RUNTIME=podman   # optional; default prefers podman, then docker
 ```
 
 Keep `MODEL_NAME` aligned with `llm.models[].params.model` in `agentgateway.yaml`.  
@@ -195,11 +196,11 @@ What the harness does automatically:
 
 1. Fail-fast check that LM Studio answers at `OPENAI_API_BASE`
 2. Ensures `agentgateway.yaml` exists (`statefulMode: stateless`, `:8080` → MCP `:8000/mcp`, plus `llm` + OTLP tracing)
-3. If `ENABLE_JAEGER=1`, starts or reuses Docker Jaeger (`:16686` UI / `:4317` OTLP); warns and continues if Docker/Jaeger fails
+3. If `ENABLE_JAEGER=1`, starts or reuses Jaeger via **Podman** (preferred) or Docker (`:16686` UI / `:4317` OTLP); warns and continues if the engine/Jaeger fails
 4. Starts the MCP server on `MCP_SERVER_PORT` (default **8000**)
 5. Starts `agentgateway -f agentgateway.yaml` on **8080** with `OPENAI_API_KEY` in the process env (logs → `.demo_logs/`)
 6. Runs the LangGraph agent for defaults **`prod-db-01`** / **`V004__drop_legacy_users.sql`**
-7. On Ctrl+C / exit, stops MCP + agentgateway; if the harness started Jaeger for this run, it `docker stop`s (does not `rm`) that container
+7. On Ctrl+C / exit, stops MCP + agentgateway; if the harness started Jaeger for this run, it runs `podman stop` / `docker stop` (does not `rm`) that container
 
 Terminal output is banded so you can tell layers apart:
 
@@ -352,16 +353,24 @@ Tracing is configured in `agentgateway.yaml` (`frontendPolicies.tracing` → `lo
 **Start Jaeger**
 
 ```bash
-# Option A — harness (.env)
+# Option A — harness (.env); prefers podman, then docker
 ENABLE_JAEGER=1
+# CONTAINER_RUNTIME=podman   # optional explicit override
 uv run python main.py
 
-# Option B — manual
+# Option B — Podman (recommended if you do not use Docker)
+# Ensure the engine is up first, e.g.: podman machine start
+podman run -d --name jaeger \
+  -p 16686:16686 \
+  -p 4317:4317 \
+  jaegertracing/all-in-one:latest
+# or: podman start jaeger
+
+# Option C — Docker
 docker run -d --name jaeger \
   -p 16686:16686 \
   -p 4317:4317 \
   jaegertracing/all-in-one:latest
-# or: docker start jaeger
 ```
 
 **After** Tool Playground pause+resume and/or a full LangGraph HITL run:
@@ -453,7 +462,8 @@ More detail: [specs/001-mrtr-db-migration/quickstart.md](specs/001-mrtr-db-migra
 | HTTP 406 from gateway | Client must send `Accept: application/json, text/event-stream` |
 | `_meta.protocolVersion is required` | Include MCP 2026-07-28 `_meta` keys under `params` (see contracts) |
 | LLM playground empty / errors | `OPENAI_API_KEY` exported for agentgateway; LM Studio up; `llm.params.model` matches loaded model |
-| No traces in Jaeger | Collector on `:4317`; `frontendPolicies.tracing` present; re-run a tool call; `ENABLE_JAEGER=1` or manual `docker start jaeger` |
+| No traces in Jaeger | Collector on `:4317`; `frontendPolicies.tracing` present; re-run a tool call; `ENABLE_JAEGER=1` + Podman/Docker engine up (`podman machine start`); or `podman start jaeger` |
+| `ENABLE_JAEGER=1` but no UI on `:16686` | `podman`/`docker` on PATH; engine ready (`podman info`); ports free; check harness WARN lines |
 
 ## License
 

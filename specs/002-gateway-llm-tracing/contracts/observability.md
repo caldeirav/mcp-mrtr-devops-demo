@@ -20,7 +20,16 @@ frontendPolicies:
 
 ## Jaeger all-in-one
 
+Harness (`ENABLE_JAEGER=1`) prefers **Podman**, then Docker. Override with `CONTAINER_RUNTIME=podman|docker`.
+
 ```bash
+# Podman
+podman run -d --name jaeger \
+  -p 16686:16686 \
+  -p 4317:4317 \
+  jaegertracing/all-in-one:latest
+
+# Docker
 docker run -d --name jaeger \
   -p 16686:16686 \
   -p 4317:4317 \
@@ -35,7 +44,7 @@ docker run -d --name jaeger \
 Reuse existing container if name `jaeger` already running:
 
 ```bash
-docker start jaeger
+podman start jaeger   # or: docker start jaeger
 ```
 
 ## Verification (destructive HITL)
